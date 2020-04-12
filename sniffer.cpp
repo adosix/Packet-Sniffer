@@ -2,11 +2,61 @@
 #include <getopt.h>
 #include <string>
 
-#define no_argument 0
-#define required_argument 1 
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <net/if.h>
+#include <sys/ioctl.h>
 
-	using namespace std;
+#define NO_ARGUMENT 0
+#define REQUIRED_ARGUMENT 1 
 
+#define DEBUG 0
+
+using namespace std;
+    
+    int list_interfaces(){
+        char         buf[1024];
+        struct ifconf ifc;
+        struct ifreq *ifr;
+        int           sck;
+        int           nInterfaces;
+        int           i;
+
+        //Get socket handle
+        sck = socket(AF_INET, SOCK_DGRAM, 0);
+        if(sck < 0){
+            perror("socket(AF_INET, SOCK_DGRAM, 0)");
+            return 1;
+        }
+
+        // Query available interfaces
+        ifc.ifc_len = sizeof(buf);
+        ifc.ifc_buf = buf;
+        if(ioctl(sck, SIOCGIFCONF, &ifc) < 0){
+            perror("ioctl(sck, SIOCGIFCONF, &ifc)");
+            return 1;
+        }
+
+        //Iterate trough list of interfaces
+        ifr         = ifc.ifc_req;
+        nInterfaces = ifc.ifc_len / sizeof(struct ifreq);
+        for(i = 0; i < nInterfaces; i++){
+            struct ifreq *item = &ifr[i];
+
+            //device name and IP address 
+            printf("name: %s \r\nIP: %s \r\n", 
+            item->ifr_name,
+            inet_ntoa(((struct sockaddr_in *)&item->ifr_addr)->sin_addr));
+
+            //print BROATCAST
+            if(ioctl(sck, SIOCGIFBRDADDR, item) >= 0){
+                printf("BROADCAST: %s \r\n\r\n", 
+                        inet_ntoa(((struct sockaddr_in *)&item->ifr_broadaddr)->sin_addr));
+            } 
+        }
+        return 0;
+    }
+	
 	int main(int argc, char* argv[]){
         
         string i = "undefined";  //interface (default = all active interfaces) 
@@ -17,12 +67,12 @@
 
         const struct option longopts[] =
         {
-            {"",   required_argument,        0, 'i'},
-            {"",    required_argument,        0, 'p'},
-            {"tcp",   no_argument,        0, 't'},
-            {"udp",   no_argument,        0, 'u'},
-            {"",   required_argument,        0, 'n'},
-            {"help",      no_argument,        0, 'h'},
+            {"",   REQUIRED_ARGUMENT,        0, 'i'},
+            {"",    REQUIRED_ARGUMENT,        0, 'p'},
+            {"tcp",   NO_ARGUMENT,        0, 't'},
+            {"udp",   NO_ARGUMENT,        0, 'u'},
+            {"",   REQUIRED_ARGUMENT,        0, 'n'},
+            {"help",      NO_ARGUMENT,        0, 'h'},
         };
 
 
@@ -59,9 +109,14 @@
                 break;
             }
         }
+        if(i.compare("undefined") == 0){
+            list_interfaces();
+        }
         std::cout << i << std::endl;
         std::cout << p << std::endl;
         std::cout << tcp << std::endl;
         std::cout << udp << std::endl;
         std::cout << n << std::endl;
     }
+
+    
