@@ -2,9 +2,9 @@
 SNIFFER          = sniffer
 SNIFFER_SOURCES  = sniffer.cpp
 
-DEFINES         =
+DEFINES        =
 CFLAGS         = -g
-LIBRARIES       = #-library_name
+LIBRARIES      = -lpcap
 
 CC              = g++
 SNIFFER_OBJECTS  = $(SNIFFER_SOURCES:.cpp=.o)
