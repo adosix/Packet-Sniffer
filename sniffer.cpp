@@ -32,8 +32,9 @@ using namespace std;
 struct sockaddr_in source,dest;
 
 int p = -1;             //filter packets on given port (default = all ports)
-int tcp = 0;            //only tcp packets will be shown
-int udp = 0;            //only udp packets will be shown
+int n = 1;              // number of packets to display (default = 1) (if n<0 infinite loop)                      
+int tcp_f = 0;            //only tcp packets will be shown
+int udp_f = 0;            //only udp packets will be shown
 
 int tcp=0,udp=0,icmp=0,others=0,igmp=0,total=0;     //statistics and debug (number of caught packages)
 
@@ -48,7 +49,6 @@ void my_packet_handler(u_char *, const struct pcap_pkthdr *, const u_char *);
 int main(int argc, char *argv[]){
 
     string i = "undefined"; //interface (default = all active interfaces)
-    int n = 1;              // number of packets to display (default = 1)
 
     const struct option longopts[] =
         {
@@ -72,10 +72,10 @@ int main(int argc, char *argv[]){
             p = atoi(optarg);
             break;
         case 't':
-            tcp = 1;
+            tcp_f = 1;
             break;
         case 'u':
-            udp = 1;
+            udp_f = 1;
             break;
         case 'n':
             n = atoi(optarg);
@@ -107,7 +107,7 @@ int main(int argc, char *argv[]){
     }
     logfile=fopen("packet_log.txt","w");
 
-    pcap_loop(handle, n, my_packet_handler, NULL);
+    pcap_loop(handle, -1, my_packet_handler, NULL);
 }
 
 int list_interfaces(){
@@ -154,6 +154,9 @@ int list_interfaces(){
 
 void my_packet_handler(u_char *args, const struct pcap_pkthdr *packet_header, const u_char *packet_body)
 {
+    if(n == 0){
+        exit(0);
+    }
     int size = packet_header->len;
    
 
@@ -165,6 +168,7 @@ void my_packet_handler(u_char *args, const struct pcap_pkthdr *packet_header, co
 
 		case 1:  //ICMP Protocol
 			++icmp;
+            --n;
 			print_icmp_packet(packet_body , size, packet_header);
 			break;
 		
@@ -174,10 +178,12 @@ void my_packet_handler(u_char *args, const struct pcap_pkthdr *packet_header, co
 		
 		case 6:  //TCP Protocol
 			++tcp;
+            --n;
 			print_tcp_packet(packet_body , size, packet_header);
 			break;
 		case 17: //UDP Protocol
 			++udp;
+            --n;
 			print_udp_packet(packet_body , size, packet_header);
 			break;
 		
@@ -208,7 +214,7 @@ void print_tcp_packet(const u_char * Buffer, int Size, const struct pcap_pkthdr 
     // packet info  
     //time
     char* time = get_time_from_packet(header);
-    printf("%s ", time);
+    std::cout << time << "  ";
     //ip adresses
 	memset(&source, 0, sizeof(source));
 	source.sin_addr.s_addr = iph->saddr;
@@ -237,7 +243,6 @@ void print_tcp_packet(const u_char * Buffer, int Size, const struct pcap_pkthdr 
 						
 }
 void print_udp_packet(const u_char *Buffer , int Size, const struct pcap_pkthdr * header){
-	
     
 	unsigned short iphdrlen;
 	
@@ -251,10 +256,8 @@ void print_udp_packet(const u_char *Buffer , int Size, const struct pcap_pkthdr 
 	std::cout << std::endl << "-------------------UDP Packet-------------------" << std::endl;
 	// packet info
     //time
-     
-    printf("%d.%06d",
-		(int) header->ts.tv_sec, (int) header->ts.tv_usec);
-
+    char* time = get_time_from_packet(header);
+    std::cout << time << "  ";
     //ip adresses
 	memset(&source, 0, sizeof(source));
 	source.sin_addr.s_addr = iph->saddr;
@@ -295,8 +298,8 @@ void print_icmp_packet(const u_char * Buffer , int Size, const struct pcap_pkthd
 	
 	std::cout << std::endl << "-------------------ICMP Packet-------------------" << std::endl;
 	//time
-    printf("%d.%06d  ",
-		(int) header->ts.tv_sec, (int) header->ts.tv_usec);
+    char* time = get_time_from_packet(header);
+    std::cout << time << "  ";
     //ip adresses
 	memset(&source, 0, sizeof(source));
 	source.sin_addr.s_addr = iph->saddr;
@@ -327,16 +330,17 @@ void print_icmp_packet(const u_char * Buffer , int Size, const struct pcap_pkthd
 }
 
 char *get_time_from_packet(const struct pcap_pkthdr *header) {
-    time_t time;
-    struct tm *tm;
-    static char tbuf[64], buf[64];
-    struct timeval tv = header->ts;
-    time = tv.tv_sec;
-    tm = localtime(&time);
 
-    strftime(tbuf, sizeof tbuf, "%h:%h:%S", tm);
-    snprintf(buf, sizeof buf, "%s.%06ld", tbuf, tv.tv_usec);
+    struct timeval time_v = header->ts;
+    time_t nowtime;
+    struct tm *now_time;
 
+    static char time_buff[64], buf[128];
+    nowtime = time_v.tv_sec;
+    now_time = localtime(&nowtime);
+
+    strftime(time_buff, sizeof time_buff, "%H:%M:%S", now_time);
+    snprintf(buf, sizeof buf, "%s.%06ld", time_buff, time_v.tv_usec);
     return buf;
 }
 
