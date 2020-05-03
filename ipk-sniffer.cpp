@@ -3,10 +3,10 @@
 #include <string>
 #include <cstdio>
 #include <cstring>
-
 #include <net/if.h>
 #include <sys/ioctl.h>
 #include <pcap.h>
+#include <netdb.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,7 +14,6 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <netinet/if_ether.h>
-#include <sys/socket.h>
 #include <arpa/inet.h>
 #include <net/ethernet.h>
 #include <netinet/ip_icmp.h>
@@ -44,6 +43,17 @@ void print_data (const u_char * , int);
 void list_interfaces();
 void my_packet_handler(u_char *, const struct pcap_pkthdr *, const u_char *);
 
+// brief: check if string has all characters digits
+bool is_number(string s){
+    for (int i = 0; i < s.length(); i++){
+    if (!isdigit( s[i] )){
+        std::cerr <<s<< " has containt only nubers." << std::endl;
+        return false;
+        }
+    }
+    return true;
+}
+
 int main(int argc, char *argv[]){
 
     string i = "undefined"; //interface (default = all active interfaces)
@@ -64,11 +74,18 @@ int main(int argc, char *argv[]){
     int iarg = 0;
     while (iarg != -1){
         iarg = getopt_long(argc, argv, "i:p:tucn:h", longopts, &index);
+
         switch (iarg){
+
         case 'i':
             i = optarg;
             break;
         case 'p':
+            if (!is_number(optarg))
+            {
+                std::cerr << "argument is not a number " << std::endl;
+                exit(1);
+            }
             p = atoi(optarg);
             break;
         case 't':
@@ -81,6 +98,11 @@ int main(int argc, char *argv[]){
             icmp_f = 1;
             break;
         case 'n':
+            if (!is_number(optarg))
+            {
+                std::cerr << "argument is not a number" <<std::endl;
+                exit(1);
+            }
             n = atoi(optarg);
             break;
         case 'h':
@@ -109,7 +131,7 @@ int main(int argc, char *argv[]){
     int timeout_limit = 0; /* In milliseconds */
 
     if (device == NULL){
-        std::cout << "Error finding device: " << error_buffer << std::endl;
+        std::cerr << "Error finding device: " << error_buffer << std::endl;
         return 1;
     }
 
@@ -124,48 +146,21 @@ int main(int argc, char *argv[]){
 }
 //lists available interfaces
 void list_interfaces(){
-    char buf[1024];
-    struct ifconf ifc;
-    struct ifreq *ifr;
-    int sck;
-    int nInterfaces;
-    int i;
-
-    //Get socket handle
-    sck = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sck < 0)
-    {
-        perror("error: socket(AF_INET, SOCK_DGRAM, 0)");
-        exit(1);
-    }
-
-    // Query available interfaces
-    ifc.ifc_len = sizeof(buf);
-    ifc.ifc_buf = buf;
-    if (ioctl(sck, SIOCGIFCONF, &ifc) < 0)
-    {
-        perror("error: ioctl(sck, SIOCGIFCONF, &ifc)");
-        exit(1);
-    }
-
-    //Iterate trough list of interfaces
-    ifr = ifc.ifc_req;
-    nInterfaces = ifc.ifc_len / sizeof(struct ifreq);
-    for (i = 0; i < nInterfaces; i++)
-    {
-        struct ifreq *item = &ifr[i];
-        //device name and IP address
-        printf("name: %s \r\nIP: %s \r\n",
-               item->ifr_name,
-               inet_ntoa(((struct sockaddr_in *)&item->ifr_addr)->sin_addr));
-
-        //print BROATCAST
-        if (ioctl(sck, SIOCGIFBRDADDR, item) >= 0)
-        {
-            printf("BROADCAST: %s \r\n\r\n",
-                   inet_ntoa(((struct sockaddr_in *)&item->ifr_broadaddr)->sin_addr));
-        }
-    }
+    pcap_if_t *alldevs , *device;
+    int cnt = 0;
+    char errbuf[100] , *devname , devs[15][50];
+    if( pcap_findalldevs( &alldevs , errbuf) ){
+		printf("Error while finding devices");
+	}
+    for(device = alldevs ; device != NULL ; device = device->next)
+	{   
+        std::cout <<cnt<<"  -   "<< device->name <<std::endl;
+		if(device->name != NULL){
+                strcpy(devs[cnt] , device->name);                           
+		}
+		cnt++;
+	}
+    exit(0);
 }
 
 //brief: decides which protocol packet had and calls funcion accordingly
@@ -286,22 +281,30 @@ void print_tcp_packet(const u_char * Buffer, int Size, const struct pcap_pkthdr 
 	memset(&dest, 0, sizeof(dest));
 	dest.sin_addr.s_addr = iph->daddr;
     //tryies to get domain name
-	hostent * host_src = gethostbyaddr(inet_ntoa(source.sin_addr), strlen(inet_ntoa(source.sin_addr)), AF_INET);
-    if(host_src) {
-        cout << host_src->h_name ;
+	    struct sockaddr_in sa;  
+    char hbuf[NI_MAXHOST];
+    memset(&sa, 0, sizeof(struct sockaddr_in));
+    sa.sin_family = AF_INET;
+    sa.sin_addr.s_addr = inet_addr(inet_ntoa(source.sin_addr));
+    if (getnameinfo((struct sockaddr*) &sa, sizeof(struct sockaddr_in), hbuf, sizeof(hbuf), NULL, 0, NI_NAMEREQD)) {
+        printf("%s", inet_ntoa(source.sin_addr));
     }
-    else{
-        cout << inet_ntoa(source.sin_addr) ;
+    else {
+        printf("%s", hbuf);
     }
+    /////////////////
     cout << " : "<< ntohs(tcph->source) <<" > ";
     //tryies to get domain name
-    hostent * host_dest = gethostbyaddr(inet_ntoa(dest.sin_addr), strlen(inet_ntoa(dest.sin_addr)), AF_INET);
-    if(host_dest) {
-        cout << host_dest->h_name << std::endl;
+    memset(&sa, 0, sizeof(struct sockaddr_in));
+    sa.sin_family = AF_INET;
+    sa.sin_addr.s_addr = inet_addr(inet_ntoa(dest.sin_addr));
+    if (getnameinfo((struct sockaddr*) &sa, sizeof(struct sockaddr_in), hbuf, sizeof(hbuf), NULL, 0, NI_NAMEREQD)) {
+        std::cout << inet_ntoa(dest.sin_addr);
     }
-    else{
-        cout << inet_ntoa(dest.sin_addr) ;
+    else {
+        printf("%s", hbuf);
     }
+    /////////////////
     cout << " : "<< ntohs(tcph->dest) << std::endl;
 
 	print_data(Buffer , Size );
@@ -337,21 +340,28 @@ void print_udp_packet(const u_char *Buffer , int Size, const struct pcap_pkthdr 
 	memset(&dest, 0, sizeof(dest));
 	dest.sin_addr.s_addr = iph->daddr;
     //tryies to get domain name
-	hostent * host_src = gethostbyaddr(inet_ntoa(source.sin_addr), strlen(inet_ntoa(source.sin_addr)), AF_INET);
-    if(host_src) {
-        cout << host_src->h_name ;
+	struct sockaddr_in sa;  
+    char hbuf[NI_MAXHOST];
+    memset(&sa, 0, sizeof(struct sockaddr_in));
+    sa.sin_family = AF_INET;
+    sa.sin_addr.s_addr = inet_addr(inet_ntoa(source.sin_addr));
+    if (getnameinfo((struct sockaddr*) &sa, sizeof(struct sockaddr_in), hbuf, sizeof(hbuf), NULL, 0, NI_NAMEREQD)) {
+        printf("%s", inet_ntoa(source.sin_addr));
     }
-    else{
-        cout << inet_ntoa(source.sin_addr) ;
+    else {
+        printf("%s", hbuf);
     }
+    /////////////////
     cout << " : "<< ntohs(udph->source) <<" > ";
     //tryies to get domain name
-    hostent * host_dest = gethostbyaddr(inet_ntoa(dest.sin_addr), strlen(inet_ntoa(dest.sin_addr)), AF_INET);
-    if(host_dest) {
-        cout << host_dest->h_name << std::endl;
+    memset(&sa, 0, sizeof(struct sockaddr_in));
+    sa.sin_family = AF_INET;
+    sa.sin_addr.s_addr = inet_addr(inet_ntoa(dest.sin_addr));
+    if (getnameinfo((struct sockaddr*) &sa, sizeof(struct sockaddr_in), hbuf, sizeof(hbuf), NULL, 0, NI_NAMEREQD)) {
+        std::cout << inet_ntoa(dest.sin_addr);
     }
-    else{
-        cout << inet_ntoa(dest.sin_addr) ;
+    else {
+        std::cout <<hbuf;
     }
     cout << " : "<< ntohs(udph->dest) << std::endl;
     //packet data		
@@ -384,23 +394,32 @@ void print_icmp_packet(const u_char * Buffer , int Size, const struct pcap_pkthd
 	source.sin_addr.s_addr = iph->saddr;
 	memset(&dest, 0, sizeof(dest));
 	dest.sin_addr.s_addr = iph->daddr;
+
     //tryies to get domain name
-	hostent * host_src = gethostbyaddr(inet_ntoa(source.sin_addr), strlen(inet_ntoa(source.sin_addr)), AF_INET);
-    if(host_src) {
-        cout << host_src->h_name ;
+    struct sockaddr_in sa;  
+    char hbuf[NI_MAXHOST];
+    memset(&sa, 0, sizeof(struct sockaddr_in));
+    sa.sin_family = AF_INET;
+    sa.sin_addr.s_addr = inet_addr(inet_ntoa(source.sin_addr));
+    if (getnameinfo((struct sockaddr*) &sa, sizeof(struct sockaddr_in), hbuf, sizeof(hbuf), NULL, 0, NI_NAMEREQD)) {
+        printf("%s", inet_ntoa(source.sin_addr));
     }
-    else{
-        cout << inet_ntoa(source.sin_addr) ;
+    else {
+        printf("%s", hbuf);
     }
+    /////////////////
     cout << " : "<< ntohs(iph->saddr) <<" > ";
     //tryies to get domain name
-    hostent * host_dest = gethostbyaddr(inet_ntoa(dest.sin_addr), strlen(inet_ntoa(dest.sin_addr)), AF_INET);
-    if(host_dest) {
-        cout << host_dest->h_name << std::endl;
+    memset(&sa, 0, sizeof(struct sockaddr_in));
+    sa.sin_family = AF_INET;
+    sa.sin_addr.s_addr = inet_addr(inet_ntoa(dest.sin_addr));
+    if (getnameinfo((struct sockaddr*) &sa, sizeof(struct sockaddr_in), hbuf, sizeof(hbuf), NULL, 0, NI_NAMEREQD)) {
+        std::cout << inet_ntoa(dest.sin_addr);
     }
-    else{
-        cout << inet_ntoa(dest.sin_addr) ;
+    else {
+        std::cout <<hbuf;
     }
+    /////////////////
     cout << " : "<< ntohs(iph->daddr) << std::endl;
 
     
@@ -421,6 +440,7 @@ char *get_time_from_packet(const struct pcap_pkthdr *header) {
     snprintf(buf, sizeof buf, "%s.%06ld", time_buff, time_v.tv_usec);
     return buf;
 }
+
 
 // brief: prints content of packet 
 //example

@@ -1,6 +1,6 @@
 
-SNIFFER          = sniffer
-SNIFFER_SOURCES  = sniffer.cpp
+SNIFFER          = ipk-sniffer
+SNIFFER_SOURCES  = ipk-sniffer.cpp
 
 DEFINES        =
 CFLAGS         = -g

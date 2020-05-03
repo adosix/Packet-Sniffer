@@ -26,3 +26,4 @@ sudo ./sniffer -i enx00e04c68021d -u
 - Makefile 
 - READNE.md = README v slovenčine
 - READMEeng.md = README v angličtine
+- manual.pdf
